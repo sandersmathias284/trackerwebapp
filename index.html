@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2c3e50">
+  <meta name="description" content="Location-based time tracking">
+  <title>Time Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%232c3e50' width='192' height='192'/><text x='96' y='140' font-size='120' fill='%23fff' text-anchor='middle' font-weight='bold'>T</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>⏱ Time Tracker</h1>
+      <div id="status" class="status-badge">Waiting for location...</div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="tracking">Tracking</button>
+      <button class="tab-btn" data-tab="schedule">Schedule</button>
+      <button class="tab-btn" data-tab="spots">Spots</button>
+      <button class="tab-btn" data-tab="history">History</button>
+    </nav>
+
+    <!-- Tracking Tab -->
+    <section id="tracking-tab" class="tab-content active">
+      <div id="map" style="width: 100%; height: 400px; border-radius: 8px; margin-bottom: 1rem;"></div>
+
+      <div class="current-spot">
+        <div id="current-spot-name">Not at any spot</div>
+        <div id="current-timer" class="timer">00:00:00</div>
+        <button id="pause-btn" class="btn-secondary" style="display: none;">Pause Tracking</button>
+        <button id="resume-btn" class="btn-secondary" style="display: none;">Resume Tracking</button>
+      </div>
+
+      <div class="location-info">
+        <p>Lat: <span id="lat">--</span>, Lng: <span id="lng">--</span></p>
+        <p>Accuracy: <span id="accuracy">--</span>m</p>
+      </div>
+    </section>
+
+    <!-- Schedule Tab -->
+    <section id="schedule-tab" class="tab-content">
+      <div class="schedule-header">
+        <h2>Work Schedule</h2>
+        <p>Click dates to mark work days. Track weeks in advance.</p>
+      </div>
+
+      <div class="calendar-controls">
+        <button id="prev-month-btn" class="btn-secondary">← Prev</button>
+        <h3 id="calendar-month"></h3>
+        <button id="next-month-btn" class="btn-secondary">Next →</button>
+      </div>
+
+      <div class="calendar-weekdays">
+        <div>Sun</div>
+        <div>Mon</div>
+        <div>Tue</div>
+        <div>Wed</div>
+        <div>Thu</div>
+        <div>Fri</div>
+        <div>Sat</div>
+      </div>
+
+      <div id="calendar-grid" class="calendar-grid">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="schedule-summary">
+        <p><strong>Work days selected:</strong> <span id="work-days-count">0</span></p>
+        <p id="is-work-today">Today is <strong id="work-today-text">not a work day</strong></p>
+      </div>
+
+      <div class="schedule-actions">
+        <button id="clear-schedule-btn" class="btn-secondary btn-danger">Clear All</button>
+      </div>
+    </section>
+
+    <!-- Spots Tab -->
+    <section id="spots-tab" class="tab-content">
+      <div class="spots-controls">
+        <p>Click map to create a new spot, or edit existing ones below.</p>
+      </div>
+
+      <div id="spots-list">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="spot-form" class="spot-form" style="display: none;">
+        <h3>New Spot</h3>
+        <input type="text" id="spot-name" placeholder="Spot name (e.g., Office, Gym)">
+        <div class="form-row">
+          <label>Radius (meters): <input type="number" id="spot-radius" value="50" min="10" max="500"></label>
+        </div>
+        <div class="form-row">
+          <label>Lat: <input type="number" id="spot-lat" step="0.00001"></label>
+          <label>Lng: <input type="number" id="spot-lng" step="0.00001"></label>
+        </div>
+        <button id="save-spot-btn" class="btn">Save Spot</button>
+        <button id="cancel-spot-btn" class="btn-secondary">Cancel</button>
+      </div>
+    </section>
+
+    <!-- History Tab -->
+    <section id="history-tab" class="tab-content">
+      <div class="history-controls">
+        <button id="export-btn" class="btn-secondary">Export CSV</button>
+        <button id="clear-history-btn" class="btn-secondary btn-danger">Clear All History</button>
+      </div>
+
+      <div id="history-list">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+  <script src="app.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
