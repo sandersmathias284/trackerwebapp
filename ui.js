@@ -110,6 +110,9 @@ class TimeTrackerUI {
       this.renderSpotsList();
     });
 
+    // Create spot button
+    document.getElementById('create-spot-btn').addEventListener('click', () => this.showSpotForm());
+
     // Spot form buttons
     document.getElementById('save-spot-btn').addEventListener('click', () => this.saveNewSpot());
     document.getElementById('cancel-spot-btn').addEventListener('click', () => this.hideSpotForm());
