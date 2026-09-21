@@ -81,37 +81,30 @@
 
     <!-- Spots Tab -->
     <section id="spots-tab" class="tab-content">
+      <div id="spots-map" class="spots-map"></div>
+
       <div class="spots-controls">
-        <p>Create work spots with geofence radius. Timer runs when you're inside.</p>
         <button id="create-spot-btn" class="btn">+ Create Spot</button>
+      </div>
+
+      <div id="spot-form" class="spot-form" style="display: none;">
+        <h3 id="spot-form-title">New Spot</h3>
+        <p id="spot-form-hint" class="hint">Tap the map where you work, or use your current location.</p>
+        <button id="use-location-btn" class="btn-secondary">Use my location</button>
+        <input type="text" id="spot-name" placeholder="Spot name (e.g., Office, Gym)">
+        <label class="radius-label">Radius: <strong id="radius-value">50</strong> m
+          <input type="range" id="spot-radius" min="10" max="500" step="5" value="50">
+        </label>
+        <input type="hidden" id="spot-lat">
+        <input type="hidden" id="spot-lng">
+        <div class="form-actions">
+          <button id="save-spot-btn" class="btn">Save Spot</button>
+          <button id="cancel-spot-btn" class="btn-secondary">Cancel</button>
+        </div>
       </div>
 
       <div id="spots-list">
         <!-- Populated by JS -->
-      </div>
-
-      <div id="spot-form" class="spot-form" style="display: none;">
-        <h3>New Spot</h3>
-        <div class="spot-form-steps">
-          <ol>
-            <li>Enter spot name</li>
-            <li>Go to <strong>Tracking</strong> tab, click map where you work</li>
-            <li>Return here, set radius, save</li>
-          </ol>
-        </div>
-        <input type="text" id="spot-name" placeholder="Spot name (e.g., Office, Gym)">
-        <div class="form-row">
-          <label>Radius (meters): <input type="number" id="spot-radius" value="50" min="10" max="500"></label>
-        </div>
-        <div id="coords-display" style="display: none;" class="coords-display">
-          <p>📍 <strong id="coords-text">Coordinates set from map</strong></p>
-        </div>
-        <div class="form-row" id="coords-row" style="display: none;">
-          <label>Lat: <input type="number" id="spot-lat" step="0.00001" readonly></label>
-          <label>Lng: <input type="number" id="spot-lng" step="0.00001" readonly></label>
-        </div>
-        <button id="save-spot-btn" class="btn">Save Spot</button>
-        <button id="cancel-spot-btn" class="btn-secondary">Cancel</button>
       </div>
     </section>
 

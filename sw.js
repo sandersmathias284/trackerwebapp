@@ -1,5 +1,5 @@
-const CACHE_NAME = 'time-tracker-v5';
-const urlsToCache = [
+const CACHE_NAME = 'time-tracker-v6';
+const PRECACHE = [
   '/',
   '/index.html',
   '/app.js',
@@ -12,54 +12,41 @@ const urlsToCache = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache).catch(() => {
-        // Fail gracefully if some resources can't be cached
-        return cache.addAll(urlsToCache.filter(url => !url.includes('cdn')));
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(PRECACHE.map(url => cache.add(url).catch(() => null)))
+    )
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
+    caches.keys().then((names) =>
+      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+    )
   );
   self.clients.claim();
 });
 
+// Network first, cache fallback. Map tiles are never cached.
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  if (request.url.includes('tile.openstreetmap.org')) return;
 
-  // Network first for remote resources
-  if (event.request.url.includes('cdn.jsdelivr.net') || event.request.url.includes('openstreetmap')) {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    );
-    return;
-  }
+  const cacheable = request.url.startsWith(self.location.origin) || request.url.includes('cdn.jsdelivr.net');
 
-  // Cache first for local resources
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request).then((response) => {
-        return caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, response.clone());
-          return response;
-        });
-      });
-    }).catch(() => {
-      return caches.match('/index.html');
-    })
+    fetch(request).then((response) => {
+      if (cacheable && response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+      }
+      return response;
+    }).catch(() =>
+      caches.match(request).then(cached =>
+        cached || (request.mode === 'navigate' ? caches.match('/index.html') : Response.error())
+      )
+    )
   );
 });

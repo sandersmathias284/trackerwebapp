@@ -1,14 +1,19 @@
-// UI layer: map, spots management, history display
+// UI layer: maps, spots management, schedule, history
 
 class TimeTrackerUI {
   constructor() {
     this.map = null;
-    this.markers = {};
-    this.creatingSpot = false;
+    this.spotsMap = null;
+    this.spotLayers = { tracking: [], spots: [] };
+    this.userMarker = null;
+    this.spotsUserMarker = null;
     this.calendarDate = new Date();
+    this.draft = null;
+    this.placing = false;
+    this.editingId = null;
 
     this.initTabs();
-    this.initMap();
+    this.initTrackingMap();
     this.initSpotsUI();
     this.initHistoryUI();
     this.setupEventListeners();
@@ -20,224 +25,258 @@ class TimeTrackerUI {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         e.target.classList.add('active');
-        const tabId = e.target.dataset.tab + '-tab';
-        document.getElementById(tabId).classList.add('active');
+        const tab = e.target.dataset.tab;
+        document.getElementById(tab + '-tab').classList.add('active');
 
-        // Render schedule when tab opens
-        if (e.target.dataset.tab === 'schedule') {
-          this.renderSchedule();
-        }
+        if (tab === 'schedule') this.renderSchedule();
+        if (tab === 'spots') this.openSpotsTab();
+        if (tab === 'history') this.renderHistory();
+        if (tab === 'tracking' && this.map) this.map.invalidateSize();
       });
     });
   }
 
-  initMap() {
-    // Wait for DOM to settle
-    setTimeout(() => {
-      const mapEl = document.getElementById('map');
-      if (!mapEl) return;
+  makeMap(id) {
+    const map = L.map(id).setView([51.2, 4.4], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19
+    }).addTo(map);
+    return map;
+  }
 
-      this.map = L.map('map').setView([51.5, 4.5], 13); // Default to Netherlands
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap',
-        maxZoom: 19
-      }).addTo(this.map);
+  userDot(map, lat, lng) {
+    return L.circleMarker([lat, lng], {
+      radius: 8, fillColor: '#3498db', color: '#fff', weight: 2, fillOpacity: 0.9
+    }).addTo(map);
+  }
 
-      // Click to create spot
-      this.map.on('click', (e) => {
-        if (!this.creatingSpot) return;
-        document.getElementById('spot-lat').value = e.latlng.lat.toFixed(5);
-        document.getElementById('spot-lng').value = e.latlng.lng.toFixed(5);
-      });
+  initTrackingMap() {
+    this.map = this.makeMap('map');
 
-      // Update map when position changes
-      window.addEventListener('positionUpdate', (e) => {
-        const { lat, lng } = e.detail;
-        if (this.map && !this.map.isMoving) {
-          // Only pan if user hasn't manually moved the map
-          const bounds = this.map.getBounds();
-          if (!bounds.contains([lat, lng])) {
-            this.map.setView([lat, lng], this.map.getZoom());
-          }
-        }
+    window.addEventListener('positionUpdate', (e) => {
+      const { lat, lng } = e.detail;
+      if (!this.userMarker) {
+        this.userMarker = this.userDot(this.map, lat, lng);
+        this.map.setView([lat, lng], 15);
+      } else {
+        this.userMarker.setLatLng([lat, lng]);
+        if (!this.map.getBounds().contains([lat, lng])) this.map.panTo([lat, lng]);
+      }
+      if (this.spotsMap) {
+        if (!this.spotsUserMarker) this.spotsUserMarker = this.userDot(this.spotsMap, lat, lng);
+        else this.spotsUserMarker.setLatLng([lat, lng]);
+      }
+    });
 
-        // Update user position marker
-        if (!this.userMarker) {
-          this.userMarker = L.circleMarker([lat, lng], {
-            radius: 8,
-            fillColor: '#3498db',
-            color: '#fff',
-            weight: 2,
-            opacity: 1,
-            fillOpacity: 0.8
-          }).addTo(this.map);
-        } else {
-          this.userMarker.setLatLng([lat, lng]);
-        }
-      });
+    this.renderSpots();
+  }
 
-      this.renderSpots();
-    }, 100);
+  drawSpots(map, key) {
+    this.spotLayers[key].forEach(l => map.removeLayer(l));
+    this.spotLayers[key] = [];
+    (tracker.spots || []).forEach(spot => {
+      if (key === 'spots' && this.editingId === spot.id) return;
+      const circle = L.circle([spot.lat, spot.lng], {
+        radius: spot.radius, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.12, weight: 2
+      }).bindTooltip(this.esc(spot.name), { permanent: true, direction: 'center', className: 'spot-label' })
+        .addTo(map);
+      this.spotLayers[key].push(circle);
+    });
   }
 
   renderSpots() {
-    if (!this.map) return;
+    if (this.map) this.drawSpots(this.map, 'tracking');
+    if (this.spotsMap) this.drawSpots(this.spotsMap, 'spots');
+  }
 
-    // Clear old markers
-    Object.values(this.markers).forEach(m => this.map.removeLayer(m));
-    this.markers = {};
-
-    // Add spot markers with circles
-    tracker.spots.forEach(spot => {
-      const marker = L.marker([spot.lat, spot.lng], {
-        title: spot.name
-      }).bindPopup(`<strong>${spot.name}</strong><br>${spot.radius}m radius`).addTo(this.map);
-
-      const circle = L.circle([spot.lat, spot.lng], {
-        radius: spot.radius,
-        color: '#e74c3c',
-        fillColor: '#e74c3c',
-        fillOpacity: 0.1,
-        weight: 2
-      }).addTo(this.map);
-
-      this.markers[spot.id] = { marker, circle };
-    });
+  openSpotsTab() {
+    if (!this.spotsMap) {
+      this.spotsMap = this.makeMap('spots-map');
+      this.spotsMap.on('click', (e) => {
+        if (!this.placing) return;
+        this.placeDraft(e.latlng.lat, e.latlng.lng);
+      });
+      const pos = tracker.currentPosition;
+      if (pos) {
+        this.spotsMap.setView([pos.lat, pos.lng], 15);
+        this.spotsUserMarker = this.userDot(this.spotsMap, pos.lat, pos.lng);
+      } else if (tracker.spots && tracker.spots.length) {
+        const s = tracker.spots[0];
+        this.spotsMap.setView([s.lat, s.lng], 15);
+      }
+    }
+    setTimeout(() => this.spotsMap.invalidateSize(), 0);
+    this.renderSpots();
+    this.renderSpotsList();
   }
 
   initSpotsUI() {
-    document.getElementById('spots-tab').addEventListener('click', () => {
-      this.renderSpotsList();
+    document.getElementById('create-spot-btn').addEventListener('click', () => this.openSpotForm());
+    document.getElementById('use-location-btn').addEventListener('click', () => this.useMyLocation());
+    document.getElementById('save-spot-btn').addEventListener('click', () => this.saveSpot());
+    document.getElementById('cancel-spot-btn').addEventListener('click', () => this.closeSpotForm());
+    document.getElementById('spot-radius').addEventListener('input', (e) => {
+      document.getElementById('radius-value').textContent = e.target.value;
+      if (this.draft) this.draft.circle.setRadius(parseInt(e.target.value));
     });
 
-    // Create spot button
-    document.getElementById('create-spot-btn').addEventListener('click', () => this.showSpotForm());
+    ['spotAdded', 'spotUpdated', 'spotDeleted', 'spotsLoaded'].forEach(ev =>
+      window.addEventListener(ev, () => {
+        this.renderSpots();
+        this.renderSpotsList();
+      })
+    );
+  }
 
-    // Spot form buttons
-    document.getElementById('save-spot-btn').addEventListener('click', () => this.saveNewSpot());
-    document.getElementById('cancel-spot-btn').addEventListener('click', () => this.hideSpotForm());
+  openSpotForm(spot = null) {
+    this.placing = true;
+    this.editingId = spot ? spot.id : null;
+    const radius = spot ? spot.radius : 50;
 
-    // Listen for spot changes
-    window.addEventListener('spotAdded', () => {
-      this.renderSpots();
-      this.renderSpotsList();
-      this.hideSpotForm();
-    });
+    document.getElementById('spot-form-title').textContent = spot ? 'Edit Spot' : 'New Spot';
+    document.getElementById('spot-form-hint').textContent = 'Tap the map where you work, or use your current location.';
+    document.getElementById('spot-name').value = spot ? spot.name : '';
+    document.getElementById('spot-radius').value = radius;
+    document.getElementById('radius-value').textContent = radius;
+    document.getElementById('spot-lat').value = '';
+    document.getElementById('spot-lng').value = '';
+    document.getElementById('spot-form').style.display = 'block';
+    document.getElementById('create-spot-btn').style.display = 'none';
+    this.spotsMap.getContainer().classList.add('placing');
 
-    window.addEventListener('spotDeleted', () => {
-      this.renderSpots();
-      this.renderSpotsList();
-    });
+    this.clearDraft();
+    if (spot) {
+      this.placeDraft(spot.lat, spot.lng);
+      this.spotsMap.setView([spot.lat, spot.lng], 16);
+    }
+    this.renderSpots();
+  }
+
+  closeSpotForm() {
+    this.placing = false;
+    this.editingId = null;
+    this.clearDraft();
+    document.getElementById('spot-form').style.display = 'none';
+    document.getElementById('create-spot-btn').style.display = '';
+    this.spotsMap.getContainer().classList.remove('placing');
+    this.renderSpots();
+  }
+
+  clearDraft() {
+    if (!this.draft) return;
+    this.spotsMap.removeLayer(this.draft.marker);
+    this.spotsMap.removeLayer(this.draft.circle);
+    this.draft = null;
+  }
+
+  placeDraft(lat, lng) {
+    const radius = parseInt(document.getElementById('spot-radius').value);
+    if (this.draft) {
+      this.draft.marker.setLatLng([lat, lng]);
+      this.draft.circle.setLatLng([lat, lng]);
+    } else {
+      const circle = L.circle([lat, lng], {
+        radius, color: '#3498db', fillColor: '#3498db', fillOpacity: 0.25, weight: 2, dashArray: '6 4'
+      }).addTo(this.spotsMap);
+      const marker = L.marker([lat, lng], { draggable: true }).addTo(this.spotsMap);
+      marker.on('drag', (e) => circle.setLatLng(e.target.getLatLng()));
+      marker.on('dragend', (e) => {
+        const p = e.target.getLatLng();
+        this.setDraftCoords(p.lat, p.lng);
+      });
+      this.draft = { marker, circle };
+    }
+    this.setDraftCoords(lat, lng);
+  }
+
+  setDraftCoords(lat, lng) {
+    document.getElementById('spot-lat').value = lat.toFixed(5);
+    document.getElementById('spot-lng').value = lng.toFixed(5);
+    document.getElementById('spot-form-hint').textContent = 'Drag the pin to adjust. Slide to change the radius.';
+  }
+
+  useMyLocation() {
+    const place = (lat, lng) => {
+      this.placeDraft(lat, lng);
+      this.spotsMap.setView([lat, lng], 17);
+    };
+    if (tracker.currentPosition) {
+      place(tracker.currentPosition.lat, tracker.currentPosition.lng);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => place(pos.coords.latitude, pos.coords.longitude),
+      () => alert('Could not get your location. Allow location access and try again.'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  async saveSpot() {
+    const name = document.getElementById('spot-name').value.trim();
+    const radius = parseInt(document.getElementById('spot-radius').value);
+    const lat = parseFloat(document.getElementById('spot-lat').value);
+    const lng = parseFloat(document.getElementById('spot-lng').value);
+
+    if (!name) { alert('Give the spot a name'); return; }
+    if (isNaN(lat) || isNaN(lng)) { alert('Tap the map to place the spot first'); return; }
+
+    if (this.editingId) {
+      await tracker.updateSpot({ id: this.editingId, name, radius, lat, lng });
+    } else {
+      await tracker.saveSpot({ name, radius, lat, lng });
+    }
+    this.closeSpotForm();
   }
 
   renderSpotsList() {
     const list = document.getElementById('spots-list');
-    list.innerHTML = '';
+    const spots = tracker.spots || [];
 
-    if (!tracker.spots || tracker.spots.length === 0) {
-      list.innerHTML = '<p class="empty">No spots yet. Click "Add Spot" or click the map to create one.</p>';
+    if (spots.length === 0) {
+      list.innerHTML = '<p class="empty">No spots yet. Tap "+ Create Spot", then tap the map where you work.</p>';
       return;
     }
 
-    const html = tracker.spots.map(spot => `
+    list.innerHTML = spots.map(spot => `
       <div class="spot-item">
         <div class="spot-header">
-          <strong>${spot.name}</strong>
+          <strong>${this.esc(spot.name)}</strong>
           <span class="spot-radius">${spot.radius}m</span>
         </div>
-        <div class="spot-coords">Lat: ${spot.lat.toFixed(5)}, Lng: ${spot.lng.toFixed(5)}</div>
         <div class="spot-actions">
+          <button class="btn-small" data-show="${spot.id}">Show</button>
           <button class="btn-small" data-edit="${spot.id}">Edit</button>
           <button class="btn-small btn-danger" data-delete="${spot.id}">Delete</button>
         </div>
       </div>
     `).join('');
 
-    list.innerHTML = html;
+    list.querySelectorAll('[data-show]').forEach(btn => btn.addEventListener('click', () => {
+      const s = spots.find(x => x.id === parseInt(btn.dataset.show));
+      if (!s) return;
+      this.spotsMap.setView([s.lat, s.lng], 16);
+      document.getElementById('spots-map').scrollIntoView({ behavior: 'smooth' });
+    }));
 
-    // Event listeners
-    list.querySelectorAll('[data-delete]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (confirm('Delete this spot?')) {
-          await tracker.deleteSpot(parseInt(btn.dataset.delete));
-        }
-      });
-    });
+    list.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => {
+      const s = spots.find(x => x.id === parseInt(btn.dataset.edit));
+      if (s) this.openSpotForm(s);
+    }));
 
-    list.querySelectorAll('[data-edit]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const spotId = parseInt(btn.dataset.edit);
-        const spot = tracker.spots.find(s => s.id === spotId);
-        if (spot) {
-          document.getElementById('spot-name').value = spot.name;
-          document.getElementById('spot-radius').value = spot.radius;
-          document.getElementById('spot-lat').value = spot.lat;
-          document.getElementById('spot-lng').value = spot.lng;
-          this.showSpotForm();
-        }
-      });
-    });
+    list.querySelectorAll('[data-delete]').forEach(btn => btn.addEventListener('click', async () => {
+      if (confirm('Delete this spot?')) await tracker.deleteSpot(parseInt(btn.dataset.delete));
+    }));
   }
 
-  showSpotForm() {
-    this.creatingSpot = true;
-    document.getElementById('spot-form').style.display = 'block';
-    document.getElementById('coords-row').style.display = 'none';
-    document.getElementById('coords-display').style.display = 'none';
-
-    // Check for coords every 500ms while form is open
-    const checkCoords = setInterval(() => {
-      const lat = document.getElementById('spot-lat').value;
-      const lng = document.getElementById('spot-lng').value;
-      if (lat && lng) {
-        document.getElementById('coords-text').textContent = `✓ ${lat}, ${lng}`;
-        document.getElementById('coords-display').style.display = 'block';
-        document.getElementById('coords-row').style.display = 'flex';
-        clearInterval(checkCoords);
-      }
-    }, 500);
-  }
-
-  hideSpotForm() {
-    this.creatingSpot = false;
-    document.getElementById('spot-form').style.display = 'none';
-    document.getElementById('spot-name').value = '';
-    document.getElementById('spot-radius').value = 50;
-    document.getElementById('spot-lat').value = '';
-    document.getElementById('spot-lng').value = '';
-  }
-
-  async saveNewSpot() {
-    const name = document.getElementById('spot-name').value.trim();
-    const radius = parseInt(document.getElementById('spot-radius').value);
-    const lat = parseFloat(document.getElementById('spot-lat').value);
-    const lng = parseFloat(document.getElementById('spot-lng').value);
-
-    if (!name || !lat || !lng || isNaN(radius)) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    await tracker.saveSpot({ name, radius, lat, lng });
-  }
-
-  initHistoryUI() {
-    document.getElementById('export-btn').addEventListener('click', () => this.exportCSV());
-    document.getElementById('clear-history-btn').addEventListener('click', () => this.clearHistory());
-
-    // Render history when tab is clicked
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      if (btn.dataset.tab === 'history') {
-        btn.addEventListener('click', () => this.renderHistory());
-      }
-    });
+  esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   renderSchedule() {
     this.renderCalendar();
     this.updateScheduleInfo();
 
-    // Bind month navigation (only once)
     const prevBtn = document.getElementById('prev-month-btn');
     const nextBtn = document.getElementById('next-month-btn');
     const clearBtn = document.getElementById('clear-schedule-btn');
@@ -254,27 +293,22 @@ class TimeTrackerUI {
     const year = this.calendarDate.getFullYear();
     const month = this.calendarDate.getMonth();
 
-    // Update header
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'];
     document.getElementById('calendar-month').textContent = `${monthNames[month]} ${year}`;
 
-    // Get first day of month and number of days
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Build calendar grid
     const grid = document.getElementById('calendar-grid');
     grid.innerHTML = '';
 
-    // Empty cells for days before month starts
     for (let i = 0; i < firstDay; i++) {
       const cell = document.createElement('div');
       cell.className = 'calendar-cell empty';
       grid.appendChild(cell);
     }
 
-    // Days of month
     const today = new Date();
     for (let day = 1; day <= daysInMonth; day++) {
       const cell = document.createElement('div');
@@ -328,6 +362,11 @@ class TimeTrackerUI {
     document.getElementById('work-days-count').textContent = tracker.workDays.length;
   }
 
+  initHistoryUI() {
+    document.getElementById('export-btn').addEventListener('click', () => this.exportCSV());
+    document.getElementById('clear-history-btn').addEventListener('click', () => this.clearHistory());
+  }
+
   async renderHistory() {
     const logs = await tracker.getTimeLogs();
     const list = document.getElementById('history-list');
@@ -337,52 +376,32 @@ class TimeTrackerUI {
       return;
     }
 
-    // Group by spot
-    const bySpot = {};
-    logs.forEach(log => {
-      if (!bySpot[log.spotName]) bySpot[log.spotName] = [];
-      bySpot[log.spotName].push(log);
-    });
-
-    // Calculate totals
     let totalTime = 0;
     const spotTotals = {};
-
-    Object.keys(bySpot).forEach(spotName => {
-      let spotTotal = 0;
-      bySpot[spotName].forEach(log => {
-        spotTotal += log.duration;
-        totalTime += log.duration;
-      });
-      spotTotals[spotName] = spotTotal;
+    logs.forEach(log => {
+      spotTotals[log.spotName] = (spotTotals[log.spotName] || 0) + log.duration;
+      totalTime += log.duration;
     });
 
-    // Render
     let html = `<div class="history-summary">
       <p><strong>Total Time Tracked:</strong> ${tracker.formatDuration(totalTime)}</p>
       <div class="spot-totals">`;
 
     Object.keys(spotTotals).sort().forEach(spotName => {
       html += `<div class="spot-total">
-        <span>${spotName}:</span>
+        <span>${this.esc(spotName)}:</span>
         <span class="duration">${tracker.formatDuration(spotTotals[spotName])}</span>
       </div>`;
     });
 
-    html += '</div></div>';
+    html += '</div></div><div class="history-timeline">';
 
-    // Timeline
-    html += '<div class="history-timeline">';
     logs.sort((a, b) => b.startTime - a.startTime).forEach(log => {
       const startDate = new Date(log.startTime);
       const endDate = new Date(log.endTime);
-      const dateStr = startDate.toLocaleDateString();
-      const startStr = startDate.toLocaleTimeString();
-      const endStr = endDate.toLocaleTimeString();
-
       html += `<div class="history-item">
-        <div class="history-spot">${log.spotName}</div>
-        <div class="history-time">${dateStr} ${startStr} – ${endStr}</div>
+        <div class="history-spot">${this.esc(log.spotName)}</div>
+        <div class="history-time">${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()} – ${endDate.toLocaleTimeString()}</div>
         <div class="history-duration">${tracker.formatDuration(log.duration)}</div>
       </div>`;
     });
@@ -398,7 +417,7 @@ class TimeTrackerUI {
     logs.sort((a, b) => a.startTime - b.startTime).forEach(log => {
       const start = new Date(log.startTime).toISOString();
       const end = new Date(log.endTime).toISOString();
-      csv += `"${log.spotName}","${start}","${end}",${Math.floor(log.duration / 1000)}\n`;
+      csv += `"${log.spotName.replace(/"/g, '""')}","${start}","${end}",${Math.floor(log.duration / 1000)}\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -417,33 +436,17 @@ class TimeTrackerUI {
   }
 
   setupEventListeners() {
-    // Update timer display
     window.addEventListener('timerUpdate', (e) => {
-      const timerEl = document.getElementById('current-timer');
-      if (timerEl) {
-        timerEl.textContent = tracker.formatDuration(e.detail.elapsed);
-      }
+      document.getElementById('current-timer').textContent = tracker.formatDuration(e.detail.elapsed);
     });
 
-    // Update spot name
     window.addEventListener('spotChange', (e) => {
-      const spotName = e.detail ? e.detail.name : 'Not at any spot';
-      document.getElementById('current-spot-name').textContent = spotName;
+      document.getElementById('current-spot-name').textContent = e.detail ? e.detail.name : 'Not at any spot';
       document.getElementById('current-timer').textContent = '00:00:00';
     });
-
-    // Add quick spot button
-    const form = document.getElementById('spot-form');
-    const spotsTab = document.querySelector('[data-tab="spots"]');
-    if (spotsTab) {
-      spotsTab.addEventListener('click', () => {
-        setTimeout(() => this.renderSpotsList(), 100);
-      });
-    }
   }
 }
 
-// Initialize UI when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     window.ui = new TimeTrackerUI();

@@ -10,7 +10,8 @@ class TimeTracker {
     this.activeSpot = null;
     this.sessionStart = null;
     this.lastUpdateTime = null;
-    this.workDays = []; // Array of day numbers (0-6) when user works
+    this.workDays = []; // Array of 'YYYY-MM-DD' strings
+    this.spots = [];
 
     this.initDB();
     this.loadSpots();
@@ -45,6 +46,7 @@ class TimeTracker {
       const req = store.getAll();
       req.onsuccess = () => {
         this.spots = req.result;
+        window.dispatchEvent(new CustomEvent('spotsLoaded'));
         resolve(this.spots);
       };
     });
@@ -246,6 +248,22 @@ class TimeTracker {
         spot.id = req.result;
         this.spots.push(spot);
         window.dispatchEvent(new CustomEvent('spotAdded', { detail: spot }));
+        resolve(spot);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async updateSpot(spot) {
+    const db = await this.dbPromise;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('spots', 'readwrite');
+      const req = tx.objectStore('spots').put(spot);
+      req.onsuccess = () => {
+        const i = this.spots.findIndex(s => s.id === spot.id);
+        if (i >= 0) this.spots[i] = spot;
+        if (this.activeSpot && this.activeSpot.id === spot.id) this.activeSpot = spot;
+        window.dispatchEvent(new CustomEvent('spotUpdated', { detail: spot }));
         resolve(spot);
       };
       req.onerror = () => reject(req.error);
