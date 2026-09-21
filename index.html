@@ -92,13 +92,23 @@
 
       <div id="spot-form" class="spot-form" style="display: none;">
         <h3>New Spot</h3>
+        <div class="spot-form-steps">
+          <ol>
+            <li>Enter spot name</li>
+            <li>Go to <strong>Tracking</strong> tab, click map where you work</li>
+            <li>Return here, set radius, save</li>
+          </ol>
+        </div>
         <input type="text" id="spot-name" placeholder="Spot name (e.g., Office, Gym)">
         <div class="form-row">
           <label>Radius (meters): <input type="number" id="spot-radius" value="50" min="10" max="500"></label>
         </div>
-        <div class="form-row">
-          <label>Lat: <input type="number" id="spot-lat" step="0.00001"></label>
-          <label>Lng: <input type="number" id="spot-lng" step="0.00001"></label>
+        <div id="coords-display" style="display: none;" class="coords-display">
+          <p>📍 <strong id="coords-text">Coordinates set from map</strong></p>
+        </div>
+        <div class="form-row" id="coords-row" style="display: none;">
+          <label>Lat: <input type="number" id="spot-lat" step="0.00001" readonly></label>
+          <label>Lng: <input type="number" id="spot-lng" step="0.00001" readonly></label>
         </div>
         <button id="save-spot-btn" class="btn">Save Spot</button>
         <button id="cancel-spot-btn" class="btn-secondary">Cancel</button>

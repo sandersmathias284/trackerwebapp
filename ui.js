@@ -182,6 +182,20 @@ class TimeTrackerUI {
   showSpotForm() {
     this.creatingSpot = true;
     document.getElementById('spot-form').style.display = 'block';
+    document.getElementById('coords-row').style.display = 'none';
+    document.getElementById('coords-display').style.display = 'none';
+
+    // Check for coords every 500ms while form is open
+    const checkCoords = setInterval(() => {
+      const lat = document.getElementById('spot-lat').value;
+      const lng = document.getElementById('spot-lng').value;
+      if (lat && lng) {
+        document.getElementById('coords-text').textContent = `✓ ${lat}, ${lng}`;
+        document.getElementById('coords-display').style.display = 'block';
+        document.getElementById('coords-row').style.display = 'flex';
+        clearInterval(checkCoords);
+      }
+    }, 500);
   }
 
   hideSpotForm() {
